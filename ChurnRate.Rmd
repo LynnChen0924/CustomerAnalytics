@@ -1,0 +1,181 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#1. Perform the analysis following the instruction e-mailed by Anna to the analytics team
+Step 1:
+We use logistic regression model to predict probability of purchase since the model has AUC of 87.58%, which is pretty high.
+```{r}
+library(tidyverse)
+library(knitr)
+library(MLmetrics)
+library(fastDummies) 
+
+
+pentathlon=read.csv("pentathlon.csv")
+names(pentathlon)
+pentathlon$agerank[pentathlon$age =="< 30"] <- 1
+pentathlon$agerank[pentathlon$age =="30 to 44"] <- 2
+pentathlon$agerank[pentathlon$age =="45 to 59"] <- 3
+pentathlon$agerank[pentathlon$age ==">= 60"] <- 4
+
+training=pentathlon[pentathlon$training==1 & pentathlon$representative==0,]
+validation=pentathlon[pentathlon$training==0 & pentathlon$representative==0,]
+representative=pentathlon[pentathlon$representative==1,]
+```
+Q1
+```{r}
+#+endurance_os+strength_os+water_os +team_os+backcountry_os+winter_os+racquet_os
+logit1 <- glm(buyer ~ message*(agerank+female+income+education+children+freq_endurance+freq_strength+freq_water+ freq_team+freq_backcountry+freq_winter+freq_racquet), data =training, family = "binomial",weight=sweight)
+summary(logit1)
+```
+```{r}
+validation_1=validation[1:90000,]
+logit.predict.test1 <- predict.glm(logit1, newdata=validation_1, type = "response")
+AUC(logit.predict.test1, validation_1$buyer)
+```
+
+#Step 2: The table shows the percent of customers for whom that message maximizes their probability of purchase for each message. We suppose we send seven types of message for each customer. For each customer, we choose the message that lead to the highest purchase probability to become target group for this customer.
+Q2
+```{r}
+#table(pentathlon$message)
+
+representative <-representative %>% mutate(offer_actual = message)
+representative <- representative %>% mutate(message="backcountry")
+representative$p_backcountry <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "endurance")
+representative$p_endurance <- predict(logit1, newdata=representative, type = "response")
+representative <- representative%>% mutate(message = "racquet")
+representative$p_racquet <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "strength")
+representative$p_strength <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(message = "team")
+representative$p_team <- predict(logit1, newdata=representative, type = "response")
+representative<- representative %>% mutate(message = "water")
+representative$p_water <- predict(logit1, newdata=representative, type = "response")
+representative <-representative %>% mutate(message = "winter")
+representative$p_winter <- predict(logit1, newdata=representative, type = "response")
+
+representative <- representative %>% rowwise %>% mutate(p_max = max(p_backcountry,p_endurance, p_racquet, p_strength,p_team,p_water,p_winter)) %>% ungroup
+representative <- representative %>% mutate(offer_target = case_when(
+  p_max == p_backcountry ~ "backcountry",
+  p_max == p_endurance ~ "endurance",
+  p_max == p_racquet ~ "racquet",
+  p_max == p_strength ~ "strength",
+  p_max == p_team ~ "team",
+  p_max == p_water ~ "water",
+  p_max == p_winter ~ "winter"))
+
+representative %>% group_by(offer_target) %>%
+  summarise(n_per_offer = n()) %>% 
+  mutate(freq_offer = n_per_offer / sum(n_per_offer)) 
+
+
+```
+
+#Step 3-4: We use linear model to predict the order size. We use similar method to get the highest expected profit. We suppose we send seven types of message for each customer. For each customer, we choose the message that lead to the highest expected profit to be the target message.
+Q3~4
+```{r}
+# Using 
+lm.fit= lm(total_os ~ message + agerank + female + income + education + 
+                            children + freq_endurance + freq_strength + 
+                            freq_water + freq_team + freq_backcountry + 
+                            freq_winter + freq_racquet, 
+                     data = training)
+
+summary(lm.fit)
+
+# Check the model performance by calculating RMSE
+total_os.prdict.test = predict(lm.fit, newdata = validation)
+total_so_valdation = validation$total_os
+RMSE = mean(sqrt((total_os.prdict.test- total_so_valdation)^2))
+RMSE
+```
+```{r}
+representative <- representative %>% mutate(message = "endurance")
+representative$profit_endurance <- predict(lm.fit, newdata=representative) * 
+                               representative$p_endurance * 0.4
+
+representative <- representative %>% mutate(message = "strength")
+representative$profit_strength <- predict(lm.fit, newdata=representative) * 
+                             representative$p_strength * 0.4
+
+representative <- representative %>% mutate(message = "water")
+representative$profit_water <- predict(lm.fit, newdata=representative) * 
+                           representative$p_water * 0.4
+
+representative <- representative %>% mutate(message = "team")
+representative$profit_team <- predict(lm.fit, newdata=representative) * 
+                                  representative$p_team * 0.4
+
+representative <- representative %>% mutate(message = "backcountry")
+representative$profit_backcountry <- predict(lm.fit, newdata=representative) * 
+                                 representative$p_backcountry * 0.4
+
+representative <- representative %>% mutate(message = "winter")
+representative$profit_winter <- predict(lm.fit, newdata=representative) * 
+                            representative$p_winter * 0.4
+
+representative <- representative %>% mutate(message = "racquet")
+representative$profit_racquet <- predict(lm.fit, newdata=representative) * 
+                               representative$p_racquet * 0.4
+
+representative <- representative %>% rowwise %>% 
+              mutate(profit_max = max(profit_endurance, profit_strength, 
+                                      profit_water, profit_team, 
+                                      profit_backcountry, profit_winter, 
+                                      profit_racquet)) %>% ungroup
+
+representative <-representative %>% mutate(message_target_profit = case_when(
+  profit_max == profit_endurance ~ "endurance",
+  profit_max == profit_strength ~ "strength",
+  profit_max == profit_water ~ "water",
+  profit_max == profit_team ~ "team",
+  profit_max == profit_backcountry ~ "backcountry",
+  profit_max == profit_winter ~ "winter",
+  profit_max == profit_racquet ~ "racquet"))
+
+representative %>% 
+  group_by(message_target_profit) %>%
+  summarise(n_per_message = n()) %>% 
+  mutate(freq_message = n_per_message / sum(n_per_message)) 
+```
+
+#Q5:Expected profit per email can we obtain on average from a customer if we customize the message to each customer.
+```{r}
+round(mean(representative$profit_max),3)
+```
+
+#Q6:Expected profit per email can we obtain on average from a customer if every customer receives the same message from the Department of Water Sports.
+```{r}
+round(mean(representative$profit_water),3)
+```
+
+#Q7:Expected profit per email can we obtain on average from a customer if every customer receives a message at random from one of the seven messages.
+```{r}
+representative <- representative %>% rowwise %>% 
+  mutate(profit_random = mean(cbind(profit_endurance, profit_strength, 
+                                    profit_water, profit_team,
+                                    profit_backcountry, profit_winter,
+                                    profit_racquet))) %>% ungroup
+round(mean(representative$profit_random),3)
+```
+
+#Q8:Improvement (in percent) Pentathlon obtain from customizing the message to each customer rather than assigning customers a message at random
+```{r}
+(0.164-0.129)/0.129
+```
+
+
+#2. Read Anna’s draft for the new e-mail policy proposal carefully. Can you suggest at least one improvement?
+#The new e-mail policy proposal may generate bias and not consider comprehensively if the two departments whose messages yield the highest and the second highest expected profit for a customer each control half of the allowed e-mail messages to that customer during that month. Some customers cannot receive emails from other departments and may repeatedly receive emails from same departments. It is hard for companies to analyze if the customers change interests. Our improvement is 1) we can lower the ½ percentage of allowed e-mail messages to customers to give other departments more probability to reach customers or 2) we can pick 3 or 4 departments instead of 2 departments whose messages yield highest expected profit.
+
+
+
+
+
+
+
+
+
