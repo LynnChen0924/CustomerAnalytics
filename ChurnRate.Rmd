@@ -1,0 +1,163 @@
+---
+title: "ChurnRate"
+author: "Lingyi Chen"
+date: "2/3/2022"
+output: html_document
+---
+
+```{r}
+S_mobile= read.csv("mobile.csv")
+names(S_mobile)
+training=S_mobile%>% filter(training == 1)
+validation=S_mobile%>% filter(training == 0)
+representative=S_mobile%>% filter(representative == 1)
+training$sweight[training$churn ==1] <- 0.0194/0.5
+training$sweight[training$churn ==0] <- (1-0.0194)/(1-0.5)
+```
+
+```{r}
+library(tidyverse)
+library(fastDummies) 
+library(neuralnet) #neural net
+library(rpart) #cart decision tree
+library(ranger) #random forest
+library(caret) #very useful tuning tool for machine learning models
+library(MLmetrics) # compute performance measures such as AUC and MSE
+library(plotROC) # ggplot for ROC/Gains
+library(gmodels)
+library(readr)
+library(margins)
+
+```
+
+```{r}
+logit1 <- glm(churn ~ revenue+changer+mou+changem+overage+roam+threeway+months+uniqsubs+phones+custcare+overage+roam+threeway+months+uniqsubs+phones+custcare+retcalls+dropvce+blckvce+unansvce+eqpdays+refurb+webcap+children+creditaa+prizmrur+mcycle+occprof+occcler+occcrft+occstud+occhmkr+occret+occself+travel,family = "binomial", data = training,weights = sweight)
+summary(logit1)
+logit.predict.test1 <- predict.glm(logit1, newdata=validation, type = "response")
+AUC(logit.predict.test1, validation$churn)
+#margins(logit1)
+```
+```{r}
+logit2 <- glm(churn ~ revenue+changer+mou+changem+overage+roam+threeway+months+uniqsubs+phones+custcare+retcalls+dropvce+blckvce+unansvce+eqpdays+refurb+webcap+children+creditaa+prizmrur+mcycle+occprof+occcler+occstud+occhmkr+occret,family = "binomial", data = training,weights = sweight)
+summary(logit2)
+logit.predict.test2 <- predict.glm(logit2, newdata=validation, type = "response")
+AUC(logit.predict.test2, validation$churn)
+```
+
+```{r}
+representative$p_churn=predict.glm(logit1, newdata=representative, type = "response")
+```
+
+
+```{r}
+summary(logit1)
+```
+```{r}
+revenue_scale=9.571969e-06*sd(training$revenue)
+changer_scale=5.469358e-05*sd(training$changer)
+mou_scale=6.48077e-06*sd(training$mou)
+changem_scale=9.552211e-06*sd(training$changem)
+overage_scale=1.565705e-05*sd(training$overage)
+roam_scale=0.0001425439*sd(training$roam)
+threeway_scale=0.000723758*sd(training$threeway)
+months_scale=0.0003940587*sd(training$months)
+uniqsubs_scale=0.001090195*sd(training$uniqsubs)
+phones_scale=0.001540034*sd(training$phones)
+custcare_scale=0.0001193137*sd(training$custcare)
+retcalls_scale=0.01195313*sd(training$retcalls)
+dropvce_scale=8.454981e-05*sd(training$dropvce)
+blckvce_scale=4.195989e-05*sd(training$blckvce)
+unansvce_scale=2.103604e-05*sd(training$unansvce)
+eqpdays_scale=2.496044e-05*sd(training$eqpdays)
+refurb_scale=0.004501645*sd(training$refurb)
+webcap=9.934e-02
+children=2.387e-03
+creditaa=3.233e-01
+prizmrur=7.262e-02
+mcycle=1.408e-01
+occprof=1.176e-01
+occcler=5.461e-02
+occcrft=1.725e-01
+occstud=1.496e-02
+occhmkr=2.980e-01
+occret=2.304e-01
+occself=1.680e-01
+travel=2.069e-02
+
+
+
+col_name=c("revenue_scale","changer_scale","mou_scale","changem_scale","overage_scale","roam_scale","threeway_scale","months_scale","uniqsubs_scale","phones_scale","custcare_scale","retcalls_scale","dropvce_scale","blckvce_scale","unansvce_scale","eqpdays_scale","refurb_scale","webcap","children","creditaa","prizmrur","mcycle","occprof","occcler","occcrft","occstud","occhmkr","occret","occself","travel")
+impo_value=c(revenue_scale,changer_scale,mou_scale,changem_scale,overage_scale,roam_scale,threeway_scale,months_scale,uniqsubs_scale,phones_scale,custcare_scale,retcalls_scale,dropvce_scale,blckvce_scale,unansvce_scale,eqpdays_scale,refurb_scale,webcap,children,creditaa,prizmrur,mcycle,occprof,occcler,occcrft,occstud,occhmkr,occret,occself,travel)
+matrix1= cbind(col_name,impo_value)
+matrix1[order(matrix1[,2],decreasing=TRUE),]
+```
+```{r}
+representative$p_churn=predict.glm(logit1, newdata=representative, type = "response")
+```
+
+```{r}
+#representative <-representative %>% mutate(webcap_new = webcap)
+#representative <- representative %>% mutate(webcap=1)
+#representative$p_webcap <- predict(logit1, newdata=representative, type = "response")
+representative <-representative %>% mutate(eqpdays_new = eqpdays)
+representative <- representative %>% mutate(eqpdays=363)
+representative$p_eqpdays <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(months_new = months)
+representative <- representative %>% mutate(months=61)
+representative$p_months <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(mou_new=mou)
+representative <- representative %>% mutate(mou=540)
+representative$p_mou <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(retcalls_new=retcalls)
+representative <- representative %>% mutate(retcalls=0)
+representative$p_retcalls <- predict(logit1, newdata=representative, type = "response")
+#representative <- representative %>% mutate(phones_new=phones)
+#representative <- representative %>% mutate(phones=1)
+#representative$p_phones <- predict(logit1, newdata=representative, type = "response")
+representative <- representative %>% mutate(refurb_new=refurb)
+representative <- representative %>% mutate(refurb=0)
+representative$p_refurb <- predict(logit1, newdata=representative, type = "response")
+```
+
+```{r}
+representative <- representative %>% rowwise %>% mutate(p_min = min(p_eqpdays, p_months, p_mou,p_retcalls,p_refurb)) %>% ungroup
+representative <- representative %>% mutate(action_target = case_when(
+  #p_min == p_webcap ~ "webcap",
+  p_min == p_eqpdays ~ "eqpdays",
+  p_min == p_months ~ "months",
+  p_min == p_mou ~ "mou",
+  p_min == p_retcalls ~ "retcalls",
+  p_min == p_refurb ~ "refurb"))
+
+representative %>% group_by(action_target) %>%
+  summarise(n_per_offer = n()) %>% 
+  mutate(freq_offer = n_per_offer / sum(n_per_offer)) 
+
+representative %>% group_by(action_target) %>%
+  summarise(avg_churn_rate= mean(p_min),original_rate=sum(churn)/n())
+```
+```{r}
+write.csv(representative, "representative.csv")
+```
+
+```{r}
+logit3 <- glm(churn ~ webcap+phones+changer+mou+overage+changem+months+retcalls+eqpdays+refurb+creditaa,family = "binomial", data = training,weights = sweight)
+summary(logit3)
+logit.predict.test3 <- predict.glm(logit3, newdata=validation, type = "response")
+AUC(logit.predict.test3, validation$churn)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
